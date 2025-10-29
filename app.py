@@ -9,15 +9,15 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 
 app = Flask(__name__)
 
-# Temporary test - Environment variable ko bypass kar rahe hain
-BROWSERLESS_API_KEY = "2TKGVGBV4K04wYe3b36e7aaf2431193206e93a6c29fc9ce27"
+# WAPAS ENVIRONMENT VARIABLE USE KARO! Yeh best practice hai.
+BROWSERLESS_API_KEY = os.environ.get("BROWSERLESS_API_KEY", "YOUR_API_KEY_HERE_IF_TESTING_LOCALLY")
+
 def generate_logs(vegamovies_url):
     """
     Yeh ek generator function hai jo scraping process ke live logs ko stream karta hai.
     """
     driver = None
     try:
-        # Har log message ko is format me bhejna zaroori hai SSE ke liye
         def stream_log(message):
             return f"data: {message}\n\n"
 
@@ -30,14 +30,18 @@ def generate_logs(vegamovies_url):
             {
                 "apiKey": BROWSERLESS_API_KEY,
                 "stealth": True,
-                "timeout": 60000, # 60 seconds ka timeout
+                "timeout": 60000,
             },
         )
         
+        # #################################################
+        # ##### YAHAN HAI ASLI CHANGE! #####
+        # #################################################
         driver = webdriver.Remote(
-            command_executor="https://chrome.browserless.io/webdriver",
+            command_executor="https://production-sfo.browserless.io/webdriver", # <-- NAYA URL!
             options=options
         )
+        
         yield stream_log("✅ Connection successful!")
         
         yield stream_log(f"🌐 Navigating to URL: {vegamovies_url}")
@@ -46,7 +50,7 @@ def generate_logs(vegamovies_url):
 
         yield stream_log("⏳ Waiting for the player iframe to become available...")
         
-        wait = WebDriverWait(driver, 45) # Timeout badha diya 45 seconds tak
+        wait = WebDriverWait(driver, 45)
         iframe_selector = (By.CSS_SELECTOR, "#IndStreamPlayer iframe")
         
         wait.until(EC.frame_to_be_available_and_switch_to_it(iframe_selector))
@@ -60,7 +64,6 @@ def generate_logs(vegamovies_url):
         
         if direct_link:
             yield stream_log("✨ BINGO! Direct video link found!")
-            # Link ko ek special format me bhejenge taaki JS use aasaani se pehchaan le
             yield f"data: --LINK--{direct_link}\n\n"
         else:
             yield stream_log("❌ Error: Video element found, but it has no 'src' link.")
@@ -71,7 +74,7 @@ def generate_logs(vegamovies_url):
         error_message = f"❌ ERROR: Timeout! Element not found or page took too long to load. (Details: {str(e).splitlines()[0]})"
         yield stream_log(error_message)
     except WebDriverException as e:
-        error_message = f"❌ ERROR: WebDriver issue. Could be a problem with Browserless.io connection. (Details: {str(e).splitlines()[0]})"
+        error_message = f"❌ ERROR: WebDriver issue. It seems the connection failed. (Details: {str(e).splitlines()[0]})"
         yield stream_log(error_message)
     except Exception as e:
         error_message = f"❌ ERROR: An unexpected error occurred: {str(e)}"
@@ -82,7 +85,6 @@ def generate_logs(vegamovies_url):
             yield stream_log("🚪 Closing browser session...")
             driver.quit()
             yield stream_log("✅ Session closed.")
-        # Special message to signal the end of the stream
         yield "data: --END-OF-STREAM--\n\n"
 
 
