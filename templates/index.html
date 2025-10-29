@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vegamovies Live Link Extractor 🚀</title>
+    <style>
+        body { font-family: 'Courier New', Courier, monospace; background-color: #121212; color: #e0e0e0; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+        .container { background-color: #1e1e1e; padding: 30px; border-radius: 10px; border: 1px solid #333; box-shadow: 0 0 25px rgba(0,0,0,0.7); width: 100%; max-width: 800px; }
+        h1 { color: #00ff9d; text-align: center; border-bottom: 1px solid #333; padding-bottom: 15px; margin-top: 0; }
+        input[type="url"] { width: calc(100% - 24px); padding: 12px; margin-bottom: 20px; border-radius: 5px; border: 1px solid #444; background-color: #2b2b2b; color: #fff; font-size: 16px; }
+        button { background-color: #00ff9d; color: #121212; padding: 12px 25px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: bold; width: 100%; transition: background-color 0.3s; }
+        button:hover { background-color: #00e68a; }
+        button:disabled { background-color: #555; cursor: not-allowed; }
+        #log-container { margin-top: 20px; background-color: #000; border: 1px solid #333; border-radius: 5px; padding: 15px; height: 300px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; font-size: 14px; line-height: 1.6; }
+        #final-result { margin-top: 15px; padding: 15px; background-color: #2b2b2b; border-radius: 5px; display: none; word-wrap: break-word; }
+        #final-result a { color: #00ff9d; text-decoration: none; }
+        #final-result a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 Live Link Extractor</h1>
+        <form id="link-form">
+            <input type="url" id="vegamovies-url" placeholder="https://vegamovies.you/..." required>
+            <button type="submit" id="submit-btn">Get Link ✨</button>
+        </form>
+        
+        <h4>Live Logs:</h4>
+        <div id="log-container">Welcome! Paste a URL and click the button to start.</div>
+        
+        <div id="final-result"></div>
+    </div>
+
+    <script>
+        const form = document.getElementById('link-form');
+        const urlInput = document.getElementById('vegamovies-url');
+        const submitBtn = document.getElementById('submit-btn');
+        const logContainer = document.getElementById('log-container');
+        const finalResultDiv = document.getElementById('final-result');
+
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const url = urlInput.value;
+            let eventSource;
+
+            // Clear previous results and disable button
+            logContainer.innerHTML = '';
+            finalResultDiv.style.display = 'none';
+            finalResultDiv.innerHTML = '';
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Processing...';
+
+            function addLog(message) {
+                logContainer.innerHTML += message + '\n';
+                // Auto-scroll to the bottom
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+
+            // Start the event stream
+            eventSource = new EventSource('/stream-logs?url=' + encodeURIComponent(url));
+            
+            // Listen for messages from the server
+            eventSource.onmessage = function(event) {
+                const message = event.data;
+
+                if (message.startsWith('--LINK--')) {
+                    const link = message.substring(8); // Remove the '--LINK--' prefix
+                    finalResultDiv.innerHTML = `<strong>🎉 Success! Link Found:</strong><br><a href="${link}" target="_blank">${link}</a>`;
+                    finalResultDiv.style.display = 'block';
+                    addLog('✅ Link successfully extracted and displayed above.');
+                } else if (message === '--END-OF-STREAM--') {
+                    addLog('🔌 Stream closed by server.');
+                    eventSource.close(); // Close the connection
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Get Link ✨';
+                } else {
+                    addLog(message);
+                }
+            };
+            
+            // Handle errors
+            eventSource.onerror = function() {
+                addLog('❌ Connection to server lost or an error occurred.');
+                eventSource.close();
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Get Link ✨';
+            };
+        });
+    </script>
+</body>
+</html>
