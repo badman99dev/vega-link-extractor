@@ -9,84 +9,96 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 
 app = Flask(__name__)
 
-# WAPAS ENVIRONMENT VARIABLE USE KARO! Yeh best practice hai.
 BROWSERLESS_API_KEY = os.environ.get("BROWSERLESS_API_KEY", "YOUR_API_KEY_HERE_IF_TESTING_LOCALLY")
 
 def generate_logs(vegamovies_url):
-    """
-    Yeh ek generator function hai jo scraping process ke live logs ko stream karta hai.
-    """
     driver = None
-    try:
-        def stream_log(message):
-            return f"data: {message}\n\n"
+    start_time = time.time()
 
-        yield stream_log("▶️ Process started...")
-        yield stream_log("🔄 Connecting to headless browser via Browserless.io...")
+    def stream_log(message):
+        elapsed_time = f"[{time.time() - start_time:.2f}s]"
+        # Server-Sent Event format: data: <message>\n\n
+        return f"data: {elapsed_time} {message}\n\n"
+
+    try:
+        yield stream_log("▶️ LOG STREAM INITIATED. Preparing scraper...")
         
+        # --- Stage 1: Configuration ---
+        yield stream_log("[CONFIG] Setting up Chrome options for remote browser.")
         options = webdriver.ChromeOptions()
-        options.set_capability(
-            "browserless:options",
-            {
-                "apiKey": BROWSERLESS_API_KEY,
-                "stealth": True,
-                "timeout": 60000,
-            },
-        )
-        
-        # #################################################
-        # ##### YAHAN HAI ASLI CHANGE! #####
-        # #################################################
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--window-size=1920,1080") # Set a window size
+
+        b_options = {
+            "browserless.apiKey": BROWSERLESS_API_KEY,
+            "browserless.stealth": True,
+            "browserless.timeout": 90000 # Timeout badha kar 90s kar diya hai
+        }
+        options.set_capability('goog:chromeOptions', {'args': [], **b_options})
+        yield stream_log("[CONFIG] Chrome options configured successfully.")
+
+        # --- Stage 2: Connection ---
+        yield stream_log("🔄 [CONNECT] Attempting to establish a WebDriver session with Browserless.io...")
         driver = webdriver.Remote(
-            command_executor="https://production-sfo.browserless.io/webdriver", # <-- NAYA URL!
+            command_executor="https://production-sfo.browserless.io/webdriver",
             options=options
         )
-        
-        yield stream_log("✅ Connection successful!")
-        
-        yield stream_log(f"🌐 Navigating to URL: {vegamovies_url}")
-        driver.get(vegamovies_url)
-        yield stream_log("✅ Page navigation complete.")
+        yield stream_log(f"✅ [CONNECT] WebDriver session created successfully! Session ID: {driver.session_id}")
 
-        yield stream_log("⏳ Waiting for the player iframe to become available...")
+        # --- Stage 3: Navigation ---
+        yield stream_log(f"🌐 [NAVIGATE] Loading the target URL: {vegamovies_url}")
+        driver.get(vegamovies_url)
+        yield stream_log(f"✅ [NAVIGATE] Page loaded. Current page title: '{driver.title}'")
+
+        # --- Stage 4: Iframe Search and Switch ---
+        yield stream_log("⏳ [IFRAME] Searching for the player iframe with selector '#IndStreamPlayer iframe'...")
         
-        wait = WebDriverWait(driver, 45)
+        wait = WebDriverWait(driver, 60) # Increased wait time to 60 seconds
         iframe_selector = (By.CSS_SELECTOR, "#IndStreamPlayer iframe")
         
-        wait.until(EC.frame_to_be_available_and_switch_to_it(iframe_selector))
-        yield stream_log("✅ Switched to player iframe successfully.")
+        iframe_element = wait.until(EC.presence_of_element_located(iframe_selector))
+        yield stream_log("👍 [IFRAME] Found the iframe element. Now attempting to switch context...")
+        
+        driver.switch_to.frame(iframe_element)
+        yield stream_log("✅ [IFRAME] Switched to player iframe context successfully.")
 
-        yield stream_log("🎬 Searching for the main video element inside the iframe...")
+        # --- Stage 5: Video Element Search ---
+        yield stream_log("🎬 [VIDEO] Searching for the <video> tag within the iframe...")
         video_element_selector = (By.TAG_NAME, "video")
         video_element = wait.until(EC.presence_of_element_located(video_element_selector))
         
+        yield stream_log("👍 [VIDEO] Found the <video> element. Extracting the 'src' attribute...")
         direct_link = video_element.get_attribute("src")
         
         if direct_link:
-            yield stream_log("✨ BINGO! Direct video link found!")
+            yield stream_log(f"✨ BINGO! Direct video link found: {direct_link[:50]}...") # Link ka preview dikhayenge
             yield f"data: --LINK--{direct_link}\n\n"
         else:
-            yield stream_log("❌ Error: Video element found, but it has no 'src' link.")
+            yield stream_log("❌ [VIDEO] CRITICAL: <video> element found, but it has no 'src' attribute. The player might have loaded differently.")
 
-        yield stream_log("🏁 Process finished.")
+        yield stream_log("🏁 SCRAPING PROCESS FINISHED SUCCESSFULLY.")
 
     except TimeoutException as e:
-        error_message = f"❌ ERROR: Timeout! Element not found or page took too long to load. (Details: {str(e).splitlines()[0]})"
+        error_message = f"❌ CRITICAL ERROR: Timeout! The process got stuck waiting for an element that never appeared. This is the most common error. It could mean the page structure has changed or the site is slow.\n\nPython Exception Details: {str(e).splitlines()[0]}"
         yield stream_log(error_message)
     except WebDriverException as e:
-        error_message = f"❌ ERROR: WebDriver issue. It seems the connection failed. (Details: {str(e).splitlines()[0]})"
+        error_details = str(e)
+        if "session not created" in error_details.lower():
+             error_message = f"❌ CRITICAL ERROR: WebDriver session could not be created. This almost always means your API Key is incorrect or your Browserless.io account has run out of usage credits.\n\nPython Exception Details: {error_details.splitlines()[0]}"
+        else:
+             error_message = f"❌ CRITICAL ERROR: A WebDriver error occurred. This could be a temporary network issue with Browserless.io or a code incompatibility.\n\nPython Exception Details: {error_details.splitlines()[0]}"
         yield stream_log(error_message)
     except Exception as e:
-        error_message = f"❌ ERROR: An unexpected error occurred: {str(e)}"
+        error_message = f"❌ UNKNOWN ERROR: An unexpected error happened. This is likely a bug in the script.\n\nPython Exception Details: {str(e)}"
         yield stream_log(error_message)
     
     finally:
         if driver:
-            yield stream_log("🚪 Closing browser session...")
+            yield stream_log("🚪 [CLEANUP] Closing browser session...")
             driver.quit()
-            yield stream_log("✅ Session closed.")
-        yield "data: --END-OF-STREAM--\n\n"
-
+            yield stream_log("✅ [CLEANUP] Session closed.")
+        yield f"data: --END-OF-STREAM--\n\n"
 
 @app.route('/')
 def index():
@@ -97,8 +109,8 @@ def stream_logs():
     url = request.args.get('url')
     if not url:
         def error_stream():
-            yield "data: ❌ ERROR: URL parameter is missing.\n\n"
-            yield "data: --END-OF-STREAM--\n\n"
+            yield f"data: ❌ ERROR: URL parameter is missing in the request.\n\n"
+            yield f"data: --END-OF-STREAM--\n\n"
         return Response(stream_with_context(error_stream()), mimetype='text/event-stream')
 
     return Response(stream_with_context(generate_logs(url)), mimetype='text/event-stream')
