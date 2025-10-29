@@ -9,8 +9,8 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 
 app = Flask(__name__)
 
-BROWSERLESS_API_KEY = os.environ.get("BROWSERLESS_API_KEY", "YOUR_API_KEY_HERE")
-
+# Temporary test - Environment variable ko bypass kar rahe hain
+BROWSERLESS_API_KEY = "2TKGVGBV4K04wYe3b36e7aaf2431193206e93a6c29fc9ce27"
 def generate_logs(vegamovies_url):
     """
     Yeh ek generator function hai jo scraping process ke live logs ko stream karta hai.
